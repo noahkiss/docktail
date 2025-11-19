@@ -44,6 +44,9 @@ Automatically expose Docker containers as Tailscale Services using label-based c
 - [ ] Add Tailscale Funnel Support
 - [ ] More? => Create an Issue :)
 
+> [!WARNING]
+> This project is still being developed and it is **not** yet recommended to use for mission critical services.
+
 ## Quick Start
 
 ### Admin Console Setup
