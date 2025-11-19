@@ -27,10 +27,10 @@ services:
     labels:
       - "docktail.service.enable=true"
       - "docktail.service.name=test-web1"
-      - "docktail.service.service-port=443"      # Port to expose on Tailscale (defaults to HTTPS)
-      - "docktail.service.service-protocol=https" # Tailscale serves HTTPS with auto TLS cert
       - "docktail.service.port=80"               # CONTAINER port (RIGHT side of "9080:80" above)
       - "docktail.service.protocol=http"         # Container speaks HTTP (Tailscale terminates TLS)
+      - "docktail.service.service-port=443"      # Port to expose on Tailscale (defaults to HTTPS)
+      - "docktail.service.service-protocol=https" # Tailscale serves HTTPS with auto TLS cert
 
   # Example web application - nginx instance 2 (using smart defaults)
   web2:
@@ -43,10 +43,9 @@ services:
       - "docktail.service.enable=true"
       - "docktail.service.name=test-web2"
       - "docktail.service.port=80"  # CONTAINER port (RIGHT side of "9081:80" above)
-      - "docktail.service.service-protocol=https"         # Container speaks HTTP (Tailscale terminates TLS)
-      # service-port defaults to "80" (HTTP)
-      # service-protocol defaults to "http" (based on port 80)
-      # protocol defaults to "http" (based on service-protocol)
+      - "docktail.service.service-protocol=https"  # Tailscale serves HTTPS
+      # service-port defaults to "443" (based on service-protocol=https)
+      # protocol defaults to "http" (based on container port=80, not 443)
 
 volumes:
   postgres-data:

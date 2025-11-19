@@ -142,9 +142,9 @@ services:
       - "docktail.service.enable=true"
       - "docktail.service.name=myapp"
       - "docktail.service.port=80"                   # Container port
+      - "docktail.service.protocol=http"             # Container speaks HTTP
       - "docktail.service.service-port=443"          # Tailscale listens on 443
       - "docktail.service.service-protocol=https"    # Tailscale serves HTTPS (auto TLS!)
-      - "docktail.service.protocol=http"             # Container speaks HTTP
 ```
 
 **Smart defaults (minimal config):**
@@ -175,13 +175,14 @@ services:
 | `docktail.service.enable` | Yes | - | Enable DockTail for container |
 | `docktail.service.name` | Yes | - | Service name (e.g., `web`, `api-v2`) |
 | `docktail.service.port` | Yes | - | **CONTAINER** port (RIGHT side of `ports:`) |
-| `docktail.service.service-port` | No | `80` | Port Tailscale listens on |
-| `docktail.service.service-protocol` | No | Smart* | Protocol Tailscale uses: `http`, `https`, `tcp` |
-| `docktail.service.protocol` | No | Smart** | Protocol container speaks: `http`, `https`, `tcp`, `tls-terminated-tcp` |
+| `docktail.service.protocol` | No | Smart*** | Protocol container speaks: `http`, `https`, `tcp`, `tls-terminated-tcp` |
+| `docktail.service.service-port` | No | Smart* | Port Tailscale listens on |
+| `docktail.service.service-protocol` | No | Smart** | Protocol Tailscale uses: `http`, `https`, `tcp` |
 
 **Smart Defaults:**
-- *`service-protocol`: Defaults to `https` if `service-port=443`, otherwise `http`
-- **`protocol`: Defaults to `http` if `service-protocol=https` (TLS termination), otherwise matches `service-protocol`
+- *`service-port`: Defaults to `80`, OR `443` if `service-protocol=https`
+- **`service-protocol`: Defaults to `https` if `service-port=443`, otherwise `http`
+- ***`protocol`: Defaults to `https` if container `port=443`, otherwise `http`
 
 **Critical:** If `ports: "9080:80"`, then `docktail.service.port=80` (container port, NOT 9080)
 
@@ -241,8 +242,8 @@ services:
       - "docktail.service.enable=true"
       - "docktail.service.name=db"
       - "docktail.service.port=5432"
-      - "docktail.service.service-port=5432"
       - "docktail.service.protocol=tcp"
+      - "docktail.service.service-port=5432"
 ```
 
 ### API with HTTPS (Auto TLS Certificate)
@@ -258,8 +259,8 @@ services:
       - "docktail.service.name=api"
       - "docktail.service.port=3000"            # Container listens on 3000
       - "docktail.service.service-port=443"     # Tailscale listens on 443 (HTTPS)
-      # service-protocol auto-defaults to "https" (port 443)
-      # protocol auto-defaults to "http" (Tailscale terminates TLS)
+      # service-protocol auto-defaults to "https" (based on service-port=443)
+      # protocol auto-defaults to "http" (based on container port=3000, not 443)
 ```
 
 Access with automatic TLS:

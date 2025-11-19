@@ -156,26 +156,21 @@ func (c *Client) parseContainer(ctx context.Context, containerID string, labels 
 		return nil, fmt.Errorf("invalid service-protocol: %s (must be http, https, tcp, or tls-terminated-tcp)", serviceProtocol)
 	}
 
-	// Smart defaults for target/container protocol based on service protocol
+	// Smart defaults for target/container protocol based on CONTAINER port
 	protocol := labels[apptypes.LabelTargetProtocol]
 	if protocol == "" {
-		// Default based on service protocol
-		switch serviceProtocol {
-		case "https":
-			// HTTPS services typically proxy to HTTP backends (TLS termination)
-			protocol = "http"
-		case "http":
-			protocol = "http"
-		case "tcp", "tls-terminated-tcp":
-			protocol = "tcp"
+		// Default based on container port
+		switch targetPort {
+		case "443":
+			protocol = "https"
 		default:
 			protocol = "http"
 		}
 		log.Debug().
 			Str("container", containerID[:12]).
-			Str("service_protocol", serviceProtocol).
-			Str("defaulted_target_protocol", protocol).
-			Msg("Target protocol not specified, defaulted based on service protocol")
+			Str("container_port", targetPort).
+			Str("defaulted_protocol", protocol).
+			Msg("Container protocol not specified, defaulted based on container port")
 	}
 
 	// Validate target protocol
