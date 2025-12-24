@@ -215,71 +215,84 @@ func (c *Client) parseContainer(ctx context.Context, containerID string, labels 
 
 	containerName := strings.TrimPrefix(inspect.Name, "/")
 
+	// Check if container uses host networking
+	isHostNetwork := inspect.HostConfig != nil && string(inspect.HostConfig.NetworkMode) == "host"
+
 	// Tailscale serve only supports localhost/127.0.0.1 proxies
 	// We need to find the published host port that maps to the target port
 	var hostPort string
 	targetPortKey := nat.Port(fmt.Sprintf("%s/tcp", targetPort))
 
-	log.Debug().
-		Str("container", containerName).
-		Str("looking_for_port", string(targetPortKey)).
-		Msg("Looking for published port binding")
+	if isHostNetwork {
+		// For host networking, the container port IS the host port
+		hostPort = targetPort
+		log.Info().
+			Str("container", containerName).
+			Str("port", targetPort).
+			Msg("Container uses host networking, port is directly accessible on localhost")
+	} else {
+		// Normal bridge networking - need to find published port bindings
+		log.Debug().
+			Str("container", containerName).
+			Str("looking_for_port", string(targetPortKey)).
+			Msg("Looking for published port binding")
 
-	if inspect.HostConfig != nil && inspect.HostConfig.PortBindings != nil {
-		if bindings, ok := inspect.HostConfig.PortBindings[targetPortKey]; ok && len(bindings) > 0 {
-			// Use the first host port binding
-			hostPort = bindings[0].HostPort
-			log.Debug().
-				Str("container", containerName).
-				Str("target_port", targetPort).
-				Str("host_port", hostPort).
-				Msg("Detected published port binding")
-		}
-	}
-
-	// If no port binding found, check NetworkSettings.Ports as fallback
-	if hostPort == "" && inspect.NetworkSettings != nil && inspect.NetworkSettings.Ports != nil {
-		if bindings, ok := inspect.NetworkSettings.Ports[targetPortKey]; ok && len(bindings) > 0 {
-			hostPort = bindings[0].HostPort
-			log.Debug().
-				Str("container", containerName).
-				Str("target_port", targetPort).
-				Str("host_port", hostPort).
-				Msg("Detected published port from NetworkSettings")
-		}
-	}
-
-	if hostPort == "" {
-		// Debug: Show what ports ARE available
-		var availablePorts []string
 		if inspect.HostConfig != nil && inspect.HostConfig.PortBindings != nil {
-			for port := range inspect.HostConfig.PortBindings {
-				availablePorts = append(availablePorts, string(port))
+			if bindings, ok := inspect.HostConfig.PortBindings[targetPortKey]; ok && len(bindings) > 0 {
+				// Use the first host port binding
+				hostPort = bindings[0].HostPort
+				log.Debug().
+					Str("container", containerName).
+					Str("target_port", targetPort).
+					Str("host_port", hostPort).
+					Msg("Detected published port binding")
 			}
 		}
 
-		log.Warn().
+		// If no port binding found, check NetworkSettings.Ports as fallback
+		if hostPort == "" && inspect.NetworkSettings != nil && inspect.NetworkSettings.Ports != nil {
+			if bindings, ok := inspect.NetworkSettings.Ports[targetPortKey]; ok && len(bindings) > 0 {
+				hostPort = bindings[0].HostPort
+				log.Debug().
+					Str("container", containerName).
+					Str("target_port", targetPort).
+					Str("host_port", hostPort).
+					Msg("Detected published port from NetworkSettings")
+			}
+		}
+
+		if hostPort == "" {
+			// Debug: Show what ports ARE available
+			var availablePorts []string
+			if inspect.HostConfig != nil && inspect.HostConfig.PortBindings != nil {
+				for port := range inspect.HostConfig.PortBindings {
+					availablePorts = append(availablePorts, string(port))
+				}
+			}
+
+			log.Warn().
+				Str("container", containerName).
+				Str("needed_port", string(targetPortKey)).
+				Strs("available_ports", availablePorts).
+				Msg("Port not found in bindings")
+
+			return nil, fmt.Errorf(
+				"container port %s is NOT published to host. "+
+					"Tailscale serve requires localhost proxies. "+
+					"Fix: Add 'ports: [\"%s:%s\"]' to container '%s' in docker-compose.yaml. "+
+					"Format is HOST:CONTAINER where %s is the CONTAINER port (docktail.service.port=%s). "+
+					"Available published ports: %v",
+				targetPort, targetPort, targetPort, containerName, targetPort, targetPort, availablePorts,
+			)
+		}
+
+		log.Info().
 			Str("container", containerName).
-			Str("needed_port", string(targetPortKey)).
-			Strs("available_ports", availablePorts).
-			Msg("Port not found in bindings")
-
-		return nil, fmt.Errorf(
-			"container port %s is NOT published to host. "+
-				"Tailscale serve requires localhost proxies. "+
-				"Fix: Add 'ports: [\"%s:%s\"]' to container '%s' in docker-compose.yaml. "+
-				"Format is HOST:CONTAINER where %s is the CONTAINER port (docktail.service.port=%s). "+
-				"Available published ports: %v",
-			targetPort, targetPort, targetPort, containerName, targetPort, targetPort, availablePorts,
-		)
+			Str("container_port", targetPort).
+			Str("host_port", hostPort).
+			Str("will_proxy_to", fmt.Sprintf("localhost:%s", hostPort)).
+			Msg("Detected port binding for Tailscale proxy")
 	}
-
-	log.Info().
-		Str("container", containerName).
-		Str("container_port", targetPort).
-		Str("host_port", hostPort).
-		Str("will_proxy_to", fmt.Sprintf("localhost:%s", hostPort)).
-		Msg("Detected port binding for Tailscale proxy")
 
 	// Parse funnel configuration (COMPLETELY INDEPENDENT of serve)
 	funnelEnabled := labels[apptypes.LabelFunnelEnable] == "true"
@@ -333,20 +346,25 @@ func (c *Client) parseContainer(ctx context.Context, containerID string, labels 
 		}
 
 		// Find the published host port for the funnel container port
-		funnelPortKey := nat.Port(fmt.Sprintf("%s/tcp", funnelPort))
-		if inspect.HostConfig != nil && inspect.HostConfig.PortBindings != nil {
-			if bindings, ok := inspect.HostConfig.PortBindings[funnelPortKey]; ok && len(bindings) > 0 {
-				funnelTargetPort = bindings[0].HostPort
+		if isHostNetwork {
+			// For host networking, the container port IS the host port
+			funnelTargetPort = funnelPort
+		} else {
+			funnelPortKey := nat.Port(fmt.Sprintf("%s/tcp", funnelPort))
+			if inspect.HostConfig != nil && inspect.HostConfig.PortBindings != nil {
+				if bindings, ok := inspect.HostConfig.PortBindings[funnelPortKey]; ok && len(bindings) > 0 {
+					funnelTargetPort = bindings[0].HostPort
+				}
 			}
-		}
-		if funnelTargetPort == "" && inspect.NetworkSettings != nil && inspect.NetworkSettings.Ports != nil {
-			if bindings, ok := inspect.NetworkSettings.Ports[funnelPortKey]; ok && len(bindings) > 0 {
-				funnelTargetPort = bindings[0].HostPort
+			if funnelTargetPort == "" && inspect.NetworkSettings != nil && inspect.NetworkSettings.Ports != nil {
+				if bindings, ok := inspect.NetworkSettings.Ports[funnelPortKey]; ok && len(bindings) > 0 {
+					funnelTargetPort = bindings[0].HostPort
+				}
 			}
-		}
 
-		if funnelTargetPort == "" {
-			return nil, fmt.Errorf("funnel container port %s is NOT published to host. Add it to ports in docker-compose", funnelPort)
+			if funnelTargetPort == "" {
+				return nil, fmt.Errorf("funnel container port %s is NOT published to host. Add it to ports in docker-compose", funnelPort)
+			}
 		}
 
 		log.Info().

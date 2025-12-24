@@ -162,6 +162,8 @@ volumes:
 
 **🚨 CRITICAL:** Container ports MUST be published to host. Tailscale serve only supports `localhost` proxies.
 
+**Exception:** Containers using `network_mode: host` do NOT need port publishing since they directly use the host's network. DockTail will automatically detect host networking and skip port binding validation.
+
 **Basic example:**
 ```yaml
 services:
@@ -354,6 +356,27 @@ Access with automatic TLS:
 ```bash
 curl https://api.your-tailnet.ts.net  # TLS cert auto-provisioned!
 ```
+
+### Container with Host Networking
+
+```yaml
+services:
+  app:
+    image: myapp:latest
+    network_mode: host
+    labels:
+      - "docktail.service.enable=true"
+      - "docktail.service.name=app"
+      - "docktail.service.port=3093"      # Port app listens on
+      # No port mapping needed! Container uses host network directly
+```
+
+Access from your tailnet:
+```bash
+curl http://app.your-tailnet.ts.net
+```
+
+**Note:** With `network_mode: host`, the container bypasses Docker's network isolation and uses the host's network directly. No port publishing is required since the container port is already accessible on `localhost`.
 
 ### Public Website with Funnel (Internet Access)
 

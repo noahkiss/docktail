@@ -85,5 +85,18 @@ services:
       # service-port should auto-default to "80"
       # Result: tailscale serve --service=svc:tcp-test --tcp=80 tcp://localhost:9090
 
+  # Example: Host networking mode (tests fix for issue #6)
+  test-host-network:
+    image: nginx:latest
+    container_name: test-host-network
+    restart: unless-stopped
+    network_mode: host
+    labels:
+      - "docktail.service.enable=true"
+      - "docktail.service.name=test-host"
+      - "docktail.service.port=80"
+      # No port mapping needed! Container uses host network directly
+      # Nginx listens on port 80, accessible on localhost:80
+
 volumes:
   postgres-data:
