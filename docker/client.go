@@ -17,17 +17,18 @@ import (
 
 // Client wraps the Docker client with our business logic
 type Client struct {
-	cli *client.Client
+	cli         *client.Client
+	defaultTags []string
 }
 
 // NewClient creates a new Docker client
-func NewClient() (*Client, error) {
+func NewClient(defaultTags []string) (*Client, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 
-	return &Client{cli: cli}, nil
+	return &Client{cli: cli, defaultTags: defaultTags}, nil
 }
 
 // Close closes the Docker client
@@ -124,11 +125,11 @@ func (c *Client) parseContainer(ctx context.Context, containerID string, labels 
 
 	// Validate target protocol
 	validProtocols := map[string]bool{
-		"http":                true,
-		"https":               true,
-		"https+insecure":      true,
-		"tcp":                 true,
-		"tls-terminated-tcp":  true,
+		"http":               true,
+		"https":              true,
+		"https+insecure":     true,
+		"tcp":                true,
+		"tls-terminated-tcp": true,
 	}
 	if !validProtocols[protocol] {
 		return nil, fmt.Errorf("invalid protocol: %s (must be http, https, https+insecure, tcp, or tls-terminated-tcp)", protocol)
@@ -294,6 +295,29 @@ func (c *Client) parseContainer(ctx context.Context, containerID string, labels 
 			Msg("Detected port binding for Tailscale proxy")
 	}
 
+	// Parse tags
+	var tags []string
+	if tagsStr := labels[apptypes.LabelTags]; tagsStr != "" {
+		// Split by comma and trim spaces
+		parts := strings.Split(tagsStr, ",")
+		for _, part := range parts {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				// Warn if tag doesn't follow Tailscale convention
+				if !strings.HasPrefix(trimmed, "tag:") {
+					log.Warn().
+						Str("container", containerName).
+						Str("tag", trimmed).
+						Msg("Tag should start with 'tag:' prefix per Tailscale convention")
+				}
+				tags = append(tags, trimmed)
+			}
+		}
+	} else {
+		// Use default tags if no override provided
+		tags = make([]string, len(c.defaultTags))
+		copy(tags, c.defaultTags)
+	}
+
 	// Parse funnel configuration (COMPLETELY INDEPENDENT of serve)
 	funnelEnabled := labels[apptypes.LabelFunnelEnable] == "true"
 	var funnelPort, funnelTargetPort, funnelFunnelPort, funnelProtocol string
@@ -384,6 +408,7 @@ func (c *Client) parseContainer(ctx context.Context, containerID string, labels 
 		TargetPort:       hostPort, // Use the published host port
 		ServiceProtocol:  serviceProtocol,
 		Protocol:         protocol,
+		Tags:             tags,
 		IPAddress:        "localhost", // Tailscale serve requires localhost
 		FunnelEnabled:    funnelEnabled,
 		FunnelPort:       funnelPort,       // Container port for funnel

@@ -10,6 +10,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"strings"
+
 	"github.com/marvinvr/docktail/docker"
 	"github.com/marvinvr/docktail/reconciler"
 	"github.com/marvinvr/docktail/tailscale"
@@ -25,13 +27,29 @@ func main() {
 	reconcileInterval := getEnvDuration("RECONCILE_INTERVAL", 60*time.Second)
 	tailscaleSocket := getEnv("TAILSCALE_SOCKET", "/var/run/tailscale/tailscaled.sock")
 
+	// Control Plane Configuration
+	tailscaleAPIKey := getEnv("TAILSCALE_API_KEY", "")
+	tailscaleTailnet := getEnv("TAILSCALE_TAILNET", "-")
+	defaultTagsStr := getEnv("DEFAULT_SERVICE_TAGS", "tag:container")
+
+	// Parse default tags
+	var defaultTags []string
+	for _, tag := range strings.Split(defaultTagsStr, ",") {
+		if trimmed := strings.TrimSpace(tag); trimmed != "" {
+			defaultTags = append(defaultTags, trimmed)
+		}
+	}
+
 	log.Info().
 		Dur("reconcile_interval", reconcileInterval).
 		Str("tailscale_socket", tailscaleSocket).
+		Bool("api_sync_enabled", tailscaleAPIKey != "").
+		Str("tailnet", tailscaleTailnet).
+		Strs("default_tags", defaultTags).
 		Msg("Configuration loaded")
 
 	// Create Docker client
-	dockerClient, err := docker.NewClient()
+	dockerClient, err := docker.NewClient(defaultTags)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create Docker client")
 	}
@@ -40,7 +58,7 @@ func main() {
 	log.Info().Msg("Docker client initialized")
 
 	// Create Tailscale client
-	tailscaleClient := tailscale.NewClient(tailscaleSocket)
+	tailscaleClient := tailscale.NewClient(tailscaleSocket, tailscaleAPIKey, tailscaleTailnet)
 
 	log.Info().Msg("Tailscale client initialized")
 

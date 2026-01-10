@@ -1,0 +1,35 @@
+# Test compose for verifying Control Plane Sync feature.
+# Requires Tailscale running on host (or use docker-compose.sidecar.yaml first).
+#
+# Usage:
+#   1. Copy .env.example to .env and configure TAILSCALE_API_KEY
+#   2. docker compose -f docker-compose.console-sync.yaml up --build
+#   3. Check Tailscale Admin Console for the synced service
+
+services:
+  docktail:
+    build: .
+    container_name: docktail-test
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+    environment:
+      - LOG_LEVEL=debug
+      - TAILSCALE_API_KEY=${TAILSCALE_API_KEY}
+      - TAILSCALE_TAILNET=${TAILSCALE_TAILNET:-}
+      - DEFAULT_SERVICE_TAGS=${DEFAULT_SERVICE_TAGS:-tag:container}
+
+  test-service:
+    image: nginx:alpine
+    container_name: docktail-test-service
+    ports:
+      - "5386:80"
+    labels:
+      - "docktail.service.enable=true"
+      - "docktail.service.name=docktail-test-svc"
+      - "docktail.service.port=80"
+      - "docktail.service.protocol=http"
+      - "docktail.service.service-port=443"
+      - "docktail.service.service-protocol=https"
+      - "docktail.tags=tag:docktail-test"

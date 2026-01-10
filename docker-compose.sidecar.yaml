@@ -1,0 +1,55 @@
+# Docker Compose setup for running DockTail with a containerized Tailscale sidecar.
+# Useful when you don't have Tailscale installed directly on the host (e.g., macOS, NAS devices).
+#
+# Usage:
+#   1. Copy .env.example to .env and configure TAILSCALE_AUTH_KEY
+#   2. docker compose -f docker-compose.sidecar.yaml up -d
+#
+# Your other containers can then use docktail labels as normal.
+
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale-sidecar
+    hostname: docktail-host
+    environment:
+      - TS_AUTHKEY=${TAILSCALE_AUTH_KEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SOCKET=/var/run/tailscale/tailscaled.sock
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - tailscale-socket:/var/run/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-S", "/var/run/tailscale/tailscaled.sock"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  docktail:
+    image: ghcr.io/marvinvr/docktail:latest
+    container_name: docktail
+    depends_on:
+      tailscale:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - tailscale-socket:/var/run/tailscale
+    environment:
+      - LOG_LEVEL=info
+      - RECONCILE_INTERVAL=60s
+      # Optional: Control Plane Sync (uncomment to enable)
+      # - TAILSCALE_API_KEY=${TAILSCALE_API_KEY}
+      # - TAILSCALE_TAILNET=${TAILSCALE_TAILNET:-}
+      # - DEFAULT_SERVICE_TAGS=${DEFAULT_SERVICE_TAGS:-tag:container}
+
+volumes:
+  tailscale-state:
+  tailscale-socket:

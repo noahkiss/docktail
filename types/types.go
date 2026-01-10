@@ -9,6 +9,7 @@ type ContainerService struct {
 	TargetPort      string // Container/host port to proxy to (e.g., "9080")
 	ServiceProtocol string // Protocol Tailscale uses (e.g., "https", "http", "tcp")
 	Protocol        string // Protocol the container speaks (e.g., "http", "https", "tcp")
+	Tags            []string // Tailscale service tags (e.g., ["tag:container", "tag:web"])
 	IPAddress          string
 	FunnelEnabled      bool   // Enable Tailscale Funnel (public internet access)
 	FunnelPort         string // Container port for funnel (separate from service port)
@@ -36,6 +37,7 @@ const (
 	LabelServiceProtocol = "docktail.service.service-protocol"
 	LabelTarget          = "docktail.service.port"
 	LabelTargetProtocol  = "docktail.service.protocol"
+	LabelTags            = "docktail.tags"
 	LabelFunnelEnable    = "docktail.funnel.enable"
 	LabelFunnelPort        = "docktail.funnel.port"        // Container port (like service.port)
 	LabelFunnelFunnelPort  = "docktail.funnel.funnel-port" // Public port (443, 8443, 10000)
