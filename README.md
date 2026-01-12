@@ -266,15 +266,23 @@ See [Tailscale Funnel documentation](https://tailscale.com/kb/1311/tailscale-fun
 
 ### Environment Variables
 
-| Variable               | Default                              | Description                                                          |
-| ---------------------- | ------------------------------------ | -------------------------------------------------------------------- |
-| `LOG_LEVEL`            | `info`                               | Logging level (debug, info, warn, error)                             |
-| `RECONCILE_INTERVAL`   | `60s`                                | State reconciliation interval                                        |
-| `DOCKER_HOST`          | `unix:///var/run/docker.sock`        | Docker daemon socket                                                 |
-| `TAILSCALE_SOCKET`     | `/var/run/tailscale/tailscaled.sock` | Tailscale daemon socket                                              |
-| `TAILSCALE_API_KEY`    | `""` (Empty)                         | Tailscale API Key (`tskey-api-...`). If empty, API sync is disabled. |
-| `TAILSCALE_TAILNET`    | `-`                                  | Tailnet ID. Defaults to `-` (the tailnet associated with the key).   |
-| `DEFAULT_SERVICE_TAGS` | `tag:container`                      | Comma-separated list of default tags for services.                   |
+| Variable                        | Default                              | Description                                                                         |
+| ------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
+| `LOG_LEVEL`                     | `info`                               | Logging level (debug, info, warn, error)                                            |
+| `RECONCILE_INTERVAL`            | `60s`                                | State reconciliation interval                                                       |
+| `DOCKER_HOST`                   | `unix:///var/run/docker.sock`        | Docker daemon socket                                                                |
+| `TAILSCALE_SOCKET`              | `/var/run/tailscale/tailscaled.sock` | Tailscale daemon socket                                                             |
+| `TAILSCALE_OAUTH_CLIENT_ID`     | `""` (Empty)                         | OAuth Client ID (recommended). Create at Tailscale Admin Console → Trust credentials. |
+| `TAILSCALE_OAUTH_CLIENT_SECRET` | `""` (Empty)                         | OAuth Client Secret. Required if using OAuth.                                       |
+| `TAILSCALE_API_KEY`             | `""` (Empty)                         | Tailscale API Key (`tskey-api-...`). Alternative to OAuth, expires every 90 days.   |
+| `TAILSCALE_TAILNET`             | `-`                                  | Tailnet ID. Defaults to `-` (the tailnet associated with the key).                  |
+| `DEFAULT_SERVICE_TAGS`          | `tag:container`                      | Comma-separated list of default tags for services.                                  |
+
+**Control Plane Sync Authentication:**
+- If both OAuth and API key are configured, OAuth takes precedence
+- OAuth is recommended as it never expires (API keys expire every 90 days)
+- OAuth requires "all" scope with your service tags configured
+- If neither is set, Control Plane sync is disabled (local serve still works)
 
 ## How It Works
 
@@ -284,7 +292,8 @@ See [Tailscale Funnel documentation](https://tailscale.com/kb/1311/tailscale-fun
 4. **Configuration Generation**: Creates Tailscale service configuration proxying to `localhost:HOST_PORT`
 5. **Configuration Application**: Executes Tailscale CLI commands to apply config and advertise services
 6. **Stateless Operation**: Periodically reconciles state by querying Docker and Tailscale APIs
-7. **Control Plane Sync (Optional)**: If `TAILSCALE_API_KEY` is provided, DockTail syncs service definitions to the Tailscale Control Plane (API). This ensures services exist globally with correct tags for ACLs.
+7. **Control Plane Sync (Optional)**: If OAuth credentials or API key are provided, DockTail syncs service definitions to the Tailscale Control Plane (API). This ensures services exist globally with correct tags for ACLs.
+   - **Authentication**: Supports OAuth client credentials (recommended, never expires) or API key (expires every 90 days). OAuth takes precedence if both are configured.
    - **Conservative Deletion**: DockTail does **NOT** delete service definitions from the API when containers stop, preventing accidental outages in HA setups.
    - **Creation Flow**: Attempts to create new services via API. Note: If your tailnet requires pre-provisioned addresses, creation may fail, requiring manual initial creation in the Admin Console.
 
@@ -430,7 +439,9 @@ To manually verify the Control Plane Sync feature:
 
 ### Prerequisites
 
-1. **Tailscale API Key:** Generate at [Tailscale Admin Console > Settings > Keys](https://login.tailscale.com/admin/settings/keys)
+1. **Tailscale API Credentials (choose one):**
+   - **OAuth Client (Recommended):** Create at [Tailscale Admin Console → Trust credentials](https://login.tailscale.com/admin/settings/oauth) with "all" scope and your service tags
+   - **API Key:** Generate at [Tailscale Admin Console → Settings → Keys](https://login.tailscale.com/admin/settings/keys) (expires every 90 days)
 2. **Docker & Tailscale:** Ensure Docker is running and Tailscale is installed/authenticated on your host
 
 ### Setup & Run
@@ -438,7 +449,9 @@ To manually verify the Control Plane Sync feature:
 1. **Configure environment:**
    ```bash
    cp .env.example .env
-   # Edit .env and add your TAILSCALE_API_KEY
+   # Edit .env and add either:
+   # - TAILSCALE_OAUTH_CLIENT_ID + TAILSCALE_OAUTH_CLIENT_SECRET (recommended)
+   # - or TAILSCALE_API_KEY
    ```
 
 2. **Start the test stack:**
@@ -447,9 +460,10 @@ To manually verify the Control Plane Sync feature:
    ```
 
 3. **Verify in logs:** Watch for:
-   - `Configuration loaded` with `api_sync_enabled=true`
+   - `Configuration loaded` with `api_sync_method=oauth` or `api_sync_method=api_key`
+   - `Tailscale API: using OAuth client credentials` or `Tailscale API: using API key`
    - `Syncing service definitions to Control Plane`
-   - `Successfully synced service definition to Control Plane`
+   - `Successfully created service definition in Control Plane`
 
 4. **Verify in Tailscale Console:**
    - Go to [Tailscale Admin Console > Services](https://login.tailscale.com/admin/services)

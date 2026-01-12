@@ -16,9 +16,13 @@ services:
       - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
     environment:
       - LOG_LEVEL=debug
-      - TAILSCALE_API_KEY=${TAILSCALE_API_KEY}
       - TAILSCALE_TAILNET=${TAILSCALE_TAILNET:-}
       - DEFAULT_SERVICE_TAGS=${DEFAULT_SERVICE_TAGS:-tag:container}
+      # Either use the API Key
+      - TAILSCALE_API_KEY=${TAILSCALE_API_KEY}
+      # Or use Oauth Credentials
+      - TAILSCALE_OAUTH_CLIENT_ID=${TAILSCALE_OAUTH_CLIENT_ID}
+      - TAILSCALE_OAUTH_CLIENT_SECRET=${TAILSCALE_OAUTH_CLIENT_SECRET}
 
   test-service:
     image: nginx:alpine

@@ -12,30 +12,78 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/oauth2/clientcredentials"
 
 	apptypes "github.com/marvinvr/docktail/types"
 )
 
 // Client handles Tailscale CLI interactions and API calls
 type Client struct {
-	socketPath string
-	apiKey     string
-	tailnet    string
-	baseURL    string
-	httpClient *http.Client
+	socketPath    string
+	tailnet       string
+	baseURL       string
+	httpClient    *http.Client
+	apiSyncEnabled bool
+}
+
+// ClientConfig holds configuration for creating a Tailscale client
+type ClientConfig struct {
+	SocketPath      string
+	Tailnet         string
+	APIKey          string
+	OAuthClientID   string
+	OAuthClientSecret string
 }
 
 // NewClient creates a new Tailscale client
-func NewClient(socketPath, apiKey, tailnet string) *Client {
-	return &Client{
-		socketPath: socketPath,
-		apiKey:     apiKey,
-		tailnet:    tailnet,
+// Prefers OAuth credentials over API key if both are provided
+func NewClient(cfg ClientConfig) *Client {
+	client := &Client{
+		socketPath: cfg.SocketPath,
+		tailnet:    cfg.Tailnet,
 		baseURL:    "https://api.tailscale.com",
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
 	}
+
+	// Prefer OAuth over API key
+	if cfg.OAuthClientID != "" && cfg.OAuthClientSecret != "" {
+		oauthConfig := &clientcredentials.Config{
+			ClientID:     cfg.OAuthClientID,
+			ClientSecret: cfg.OAuthClientSecret,
+			TokenURL:     "https://api.tailscale.com/api/v2/oauth/token",
+		}
+		// The oauth2 client handles token refresh automatically
+		client.httpClient = oauthConfig.Client(context.Background())
+		client.httpClient.Timeout = 10 * time.Second
+		client.apiSyncEnabled = true
+		log.Info().Msg("Tailscale API: using OAuth client credentials")
+	} else if cfg.APIKey != "" {
+		// Fall back to API key with custom transport
+		client.httpClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: &apiKeyTransport{apiKey: cfg.APIKey},
+		}
+		client.apiSyncEnabled = true
+		log.Info().Msg("Tailscale API: using API key")
+	} else {
+		// No API credentials - API sync disabled
+		client.httpClient = &http.Client{
+			Timeout: 10 * time.Second,
+		}
+		client.apiSyncEnabled = false
+		log.Info().Msg("Tailscale API: no credentials configured, control plane sync disabled")
+	}
+
+	return client
+}
+
+// apiKeyTransport adds the API key as a Bearer token to requests
+type apiKeyTransport struct {
+	apiKey string
+}
+
+func (t *apiKeyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	return http.DefaultTransport.RoundTrip(req)
 }
 
 // ServiceEndpoint represents a single endpoint for comparison
@@ -216,7 +264,7 @@ func (c *Client) ReconcileServices(ctx context.Context, desiredServices []*appty
 	// Sync Service Definitions to Control Plane (API)
 	// This is done after local serve commands to ensure local state is consistent first,
 	// but failures here are non-blocking for the local advertisement.
-	if c.apiKey != "" {
+	if c.apiSyncEnabled {
 		if err := c.syncServiceDefinitions(ctx, desiredServices); err != nil {
 			// Log error but do NOT return it - we don't want API failures to break local serving
 			log.Error().Err(err).Msg("Failed to sync service definitions to Tailscale API")
@@ -324,7 +372,6 @@ func (c *Client) SyncServiceDefinition(ctx context.Context, serviceName string, 
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	log.Debug().
@@ -371,8 +418,6 @@ func (c *Client) getService(ctx context.Context, serviceName string) (*apiServic
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GET request: %w", err)
 	}
-
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	log.Debug().
 		Str("method", "GET").

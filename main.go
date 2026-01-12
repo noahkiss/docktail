@@ -29,6 +29,8 @@ func main() {
 
 	// Control Plane Configuration
 	tailscaleAPIKey := getEnv("TAILSCALE_API_KEY", "")
+	tailscaleOAuthClientID := getEnv("TAILSCALE_OAUTH_CLIENT_ID", "")
+	tailscaleOAuthClientSecret := getEnv("TAILSCALE_OAUTH_CLIENT_SECRET", "")
 	tailscaleTailnet := getEnv("TAILSCALE_TAILNET", "-")
 	defaultTagsStr := getEnv("DEFAULT_SERVICE_TAGS", "tag:container")
 
@@ -40,10 +42,18 @@ func main() {
 		}
 	}
 
+	// Determine API sync method for logging
+	apiSyncMethod := "disabled"
+	if tailscaleOAuthClientID != "" && tailscaleOAuthClientSecret != "" {
+		apiSyncMethod = "oauth"
+	} else if tailscaleAPIKey != "" {
+		apiSyncMethod = "api_key"
+	}
+
 	log.Info().
 		Dur("reconcile_interval", reconcileInterval).
 		Str("tailscale_socket", tailscaleSocket).
-		Bool("api_sync_enabled", tailscaleAPIKey != "").
+		Str("api_sync_method", apiSyncMethod).
 		Str("tailnet", tailscaleTailnet).
 		Strs("default_tags", defaultTags).
 		Msg("Configuration loaded")
@@ -58,7 +68,13 @@ func main() {
 	log.Info().Msg("Docker client initialized")
 
 	// Create Tailscale client
-	tailscaleClient := tailscale.NewClient(tailscaleSocket, tailscaleAPIKey, tailscaleTailnet)
+	tailscaleClient := tailscale.NewClient(tailscale.ClientConfig{
+		SocketPath:        tailscaleSocket,
+		Tailnet:           tailscaleTailnet,
+		APIKey:            tailscaleAPIKey,
+		OAuthClientID:     tailscaleOAuthClientID,
+		OAuthClientSecret: tailscaleOAuthClientSecret,
+	})
 
 	log.Info().Msg("Tailscale client initialized")
 
