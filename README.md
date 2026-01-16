@@ -496,6 +496,10 @@ docker build -t docktail:latest .
 - [Tailscale Service Configuration Reference](https://tailscale.com/kb/1589/tailscale-services-configuration-file)
 - [Docker SDK for Go](https://docs.docker.com/engine/api/sdk/)
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=marvinvr/docktail&type=date&legend=top-left)](https://www.star-history.com/#marvinvr/docktail&type=date&legend=top-left)
+
 ## License
 
 AGPL v3
